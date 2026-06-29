@@ -8,6 +8,18 @@ import VideoOverlay from "../components/VideoOverlay";
 import { useI18n } from "../i18n";
 import type { Camera, FrameOutput, HydrationEvent } from "../types";
 
+const CLOUD_CV_URL = "https://action-orc.pages.dev/";
+const CLOUD_CV_CAMERA: Camera = {
+  id: "cloud-cv",
+  name: "Action ORC",
+  location: "Cloudflare Pages · Production",
+  source_type: "cloud",
+  status: "live",
+  fps: 0,
+  latency_ms: 0,
+  resolution: [1280, 720],
+};
+
 export default function LivePage() {
   const { t } = useI18n();
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -35,18 +47,25 @@ export default function LivePage() {
 
   useEffect(() => {
     setFrame(undefined);
-    if (selectedId === "cam-local") return;
+    if (selectedId === "cam-local" || selectedId === "cloud-cv") return;
     const socket = new WebSocket(socketUrl(selectedId));
     socket.onmessage = (message) => setFrame(JSON.parse(message.data));
     return () => socket.close();
   }, [selectedId]);
 
-  const selected = cameras.find((camera) => camera.id === selectedId);
+  const cameraSources = useMemo(() => {
+    const exists = cameras.some((camera) => camera.id === CLOUD_CV_CAMERA.id);
+    return exists ? cameras : [...cameras, CLOUD_CV_CAMERA];
+  }, [cameras]);
+  const selected = cameraSources.find((camera) => camera.id === selectedId);
   const isLocalWebcam = selectedId === "cam-local";
-  const sourceLabel = isLocalWebcam ? "LOCAL WEBCAM" : "DEMO REPLAY";
-  const streamLabel = selected
-    ? `${selected.source_type.toUpperCase()} · ${selected.resolution[0]} × ${selected.resolution[1]}`
-    : "MJPEG";
+  const isCloudCv = selectedId === "cloud-cv";
+  const sourceLabel = isCloudCv ? "CLOUD CV" : isLocalWebcam ? "LOCAL WEBCAM" : "DEMO REPLAY";
+  const streamLabel = isCloudCv
+    ? "IFRAME · ACTION ORC"
+    : selected
+      ? `${selected.source_type.toUpperCase()} · ${selected.resolution[0]} × ${selected.resolution[1]}`
+      : "MJPEG";
   const person = frame?.people[0];
   const state = person?.action.state ?? "idle";
   const confidence = person?.action.confidence ?? 0;
@@ -85,9 +104,9 @@ export default function LivePage() {
   return (
     <main className="live-layout">
       <aside className="camera-sidebar">
-        <div className="panel-heading">{t("cameras")}<span>{cameras.length}</span></div>
+        <div className="panel-heading">{t("cameras")}<span>{cameraSources.length}</span></div>
         <div className="camera-list">
-          {cameras.map((camera, index) => (
+          {cameraSources.map((camera, index) => (
             <button
               key={camera.id}
               className={`camera-item ${selectedId === camera.id ? "selected" : ""}`}
@@ -110,7 +129,7 @@ export default function LivePage() {
           ))}
         </div>
         <div className="source-note">
-          {isLocalWebcam ? <CameraIcon size={15} /> : <Radio size={15} />}
+          {isLocalWebcam || isCloudCv ? <CameraIcon size={15} /> : <Radio size={15} />}
           <div><strong>{sourceLabel}</strong><span>{streamLabel}</span></div>
         </div>
       </aside>
@@ -121,23 +140,33 @@ export default function LivePage() {
             <span className="eyebrow">{selected?.id.toUpperCase()} / {selected?.location}</span>
             <h1>{selected?.name ?? "Camera"}</h1>
           </div>
-          <div className="monitor-tools">
-            {(["bottle", "pose", "hands"] as const).map((key) => (
-              <label key={key} className="overlay-toggle">
-                <input
-                  type="checkbox"
-                  checked={toggles[key]}
-                  onChange={() => setToggles((old) => ({ ...old, [key]: !old[key] }))}
-                />
-                <span />
-                {t(key)}
-              </label>
-            ))}
-            <button className="icon-button" title="Overlay settings"><SlidersHorizontal size={17} /></button>
-          </div>
+          {!isCloudCv && (
+            <div className="monitor-tools">
+              {(["bottle", "pose", "hands"] as const).map((key) => (
+                <label key={key} className="overlay-toggle">
+                  <input
+                    type="checkbox"
+                    checked={toggles[key]}
+                    onChange={() => setToggles((old) => ({ ...old, [key]: !old[key] }))}
+                  />
+                  <span />
+                  {t(key)}
+                </label>
+              ))}
+              <button className="icon-button" title="Overlay settings"><SlidersHorizontal size={17} /></button>
+            </div>
+          )}
         </div>
         <div className="video-shell">
-          {isLocalWebcam ? (
+          {isCloudCv ? (
+            <iframe
+              className="cloud-cv-source-frame"
+              title="Action ORC Cloud CV"
+              src={CLOUD_CV_URL}
+              allow="camera; microphone; fullscreen; clipboard-read; clipboard-write"
+              referrerPolicy="strict-origin-when-cross-origin"
+            />
+          ) : isLocalWebcam ? (
             <>
               <video ref={localVideoRef} autoPlay playsInline muted />
               {!webcamReady && (
@@ -149,31 +178,41 @@ export default function LivePage() {
           ) : (
             <img src={streamUrl(selectedId)} alt={`Live view from ${selected?.name}`} />
           )}
-          <VideoOverlay
-            detection={person}
-            sourceSize={frame?.frame_size ?? [960, 540]}
-            toggles={toggles}
-          />
-          <div className="video-top-left">
-            <span className="live-chip"><i /> LIVE</span>
-            <span>{isLocalWebcam && webcamReady ? "BROWSER" : frame?.system.fps.toFixed(1) ?? "—"} FPS</span>
-            <span>{frame?.system.latency_ms ?? "—"} MS</span>
-          </div>
-          {person && <div className="person-label">P00</div>}
-          {confidence > 0.3 && (
-            <div className={`action-state-label state-${state}`}>
-              <span>{t(state)}</span>
-              <strong>{Math.round(confidence * 100)}%</strong>
+          {!isCloudCv && (
+            <>
+              <VideoOverlay
+                detection={person}
+                sourceSize={frame?.frame_size ?? [960, 540]}
+                toggles={toggles}
+              />
+              <div className="video-top-left">
+                <span className="live-chip"><i /> LIVE</span>
+                <span>{isLocalWebcam && webcamReady ? "BROWSER" : frame?.system.fps.toFixed(1) ?? "—"} FPS</span>
+                <span>{frame?.system.latency_ms ?? "—"} MS</span>
+              </div>
+              {person && <div className="person-label">P00</div>}
+              {confidence > 0.3 && (
+                <div className={`action-state-label state-${state}`}>
+                  <span>{t(state)}</span>
+                  <strong>{Math.round(confidence * 100)}%</strong>
+                </div>
+              )}
+              <SequenceRail state={state} confidence={confidence} />
+              <div className="video-controls">
+                <button title="Pause"><Pause size={15} /></button>
+                <span>{sourceLabel} · {new Date().toLocaleTimeString([], { hour12: false })}</span>
+                <button title="Fullscreen" onClick={() => document.querySelector(".video-shell")?.requestFullscreen()}>
+                  <Maximize size={15} />
+                </button>
+              </div>
+            </>
+          )}
+          {isCloudCv && (
+            <div className="video-top-left">
+              <span className="live-chip"><i /> LIVE</span>
+              <span>CLOUD</span>
             </div>
           )}
-          <SequenceRail state={state} confidence={confidence} />
-          <div className="video-controls">
-            <button title="Pause"><Pause size={15} /></button>
-            <span>{sourceLabel} · {new Date().toLocaleTimeString([], { hour12: false })}</span>
-            <button title="Fullscreen" onClick={() => document.querySelector(".video-shell")?.requestFullscreen()}>
-              <Maximize size={15} />
-            </button>
-          </div>
         </div>
         <Timeline events={recentEvents} />
       </section>
