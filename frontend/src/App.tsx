@@ -1,7 +1,6 @@
 import {
   Activity,
   CalendarClock,
-  CheckCircle2,
   Factory,
   Languages,
 } from "lucide-react";
@@ -28,7 +27,6 @@ export default function App() {
           <NavLink to="/events"><CalendarClock size={17} />{t("events")}</NavLink>
         </nav>
         <div className="topbar-tools">
-          <div className="system-ok"><CheckCircle2 size={14} />{t("allSystems")}</div>
           <div className="language-control" aria-label="Language">
             <Languages size={15} />
             {(["EN", "JP"] as const).map((lang) => (
@@ -51,4 +49,3 @@ export default function App() {
     </div>
   );
 }
-

@@ -5,12 +5,11 @@ const translations = {
     live: "Live monitoring",
     events: "Events",
     cameras: "CAMERAS",
-    liveFeed: "LIVE ACTION FEED",
+    liveFeed: "ACTION FEED",
     timeline: "10 MINUTE EVENT WINDOW",
     verify: "Verify",
     verified: "Verified",
     review: "Review event",
-    allSystems: "System nominal",
     bottle: "Bottle",
     pose: "Pose",
     hands: "Hands",
@@ -49,12 +48,11 @@ const translations = {
     live: "ライブ監視",
     events: "イベント",
     cameras: "カメラ",
-    liveFeed: "ライブアクション",
+    liveFeed: "アクション",
     timeline: "直近10分のイベント",
     verify: "確認する",
     verified: "確認済み",
     review: "イベントを確認",
-    allSystems: "システム正常",
     bottle: "ボトル",
     pose: "姿勢",
     hands: "手",
@@ -110,4 +108,3 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 }
 
 export const useI18n = () => useContext(I18nContext);
-

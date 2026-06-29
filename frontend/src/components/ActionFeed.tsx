@@ -30,7 +30,6 @@ export default function ActionFeed({
     <aside className="action-panel">
       <div className="panel-heading">
         <span>{t("liveFeed")}</span>
-        <span className="pulse-label"><i /> LIVE</span>
       </div>
       <div className={`live-action state-${liveState}`}>
         <div className="action-icon"><Icon size={18} /></div>
@@ -69,4 +68,3 @@ export default function ActionFeed({
     </aside>
   );
 }
-

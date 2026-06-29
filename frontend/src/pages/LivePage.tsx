@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera as CameraIcon, Maximize, Pause, Radio, SlidersHorizontal } from "lucide-react";
+import { Camera as CameraIcon, Maximize, Radio, SlidersHorizontal } from "lucide-react";
 import { getCameras, getEvents, socketUrl, streamUrl } from "../api";
 import ActionFeed from "../components/ActionFeed";
 import SequenceRail from "../components/SequenceRail";
@@ -118,11 +118,13 @@ export default function LivePage() {
                 <small>{camera.location}</small>
                 <span className="camera-metrics">
                   <StatusDot status={camera.status} />
-                  {camera.status.toUpperCase()}
-                  <i />
-                  {camera.fps.toFixed(1)} FPS
-                  <i />
-                  {camera.latency_ms} MS
+                  {camera.source_type.toUpperCase()}
+                  {camera.fps > 0 && (
+                    <>
+                      <i />
+                      {camera.fps.toFixed(1)} FPS
+                    </>
+                  )}
                 </span>
               </span>
             </button>
@@ -185,11 +187,6 @@ export default function LivePage() {
                 sourceSize={frame?.frame_size ?? [960, 540]}
                 toggles={toggles}
               />
-              <div className="video-top-left">
-                <span className="live-chip"><i /> LIVE</span>
-                <span>{isLocalWebcam && webcamReady ? "BROWSER" : frame?.system.fps.toFixed(1) ?? "—"} FPS</span>
-                <span>{frame?.system.latency_ms ?? "—"} MS</span>
-              </div>
               {person && <div className="person-label">P00</div>}
               {confidence > 0.3 && (
                 <div className={`action-state-label state-${state}`}>
@@ -198,21 +195,15 @@ export default function LivePage() {
                 </div>
               )}
               <SequenceRail state={state} confidence={confidence} />
-              <div className="video-controls">
-                <button title="Pause"><Pause size={15} /></button>
-                <span>{sourceLabel} · {new Date().toLocaleTimeString([], { hour12: false })}</span>
-                <button title="Fullscreen" onClick={() => document.querySelector(".video-shell")?.requestFullscreen()}>
-                  <Maximize size={15} />
-                </button>
-              </div>
             </>
           )}
-          {isCloudCv && (
-            <div className="video-top-left">
-              <span className="live-chip"><i /> LIVE</span>
-              <span>CLOUD</span>
-            </div>
-          )}
+          <button
+            className="video-fullscreen-button"
+            title="Fullscreen"
+            onClick={() => document.querySelector(".video-shell")?.requestFullscreen()}
+          >
+            <Maximize size={17} />
+          </button>
         </div>
         <Timeline events={recentEvents} />
       </section>
