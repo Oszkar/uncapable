@@ -190,7 +190,12 @@ class CameraWorker:
         self.ring: deque[tuple[np.ndarray, str]] = deque(maxlen=150)
         self.completion_emitted = False
         self.pending_event: dict | None = None
-        self.scene = DemoScene(negative=camera.id == "cam-002")
+        self.scene = (
+            DemoScene(negative=camera.id == "cam-002")
+            if camera.source_type == "demo"
+            else None
+        )
+        self.capture: cv2.VideoCapture | None = None
 
     def start(self) -> None:
         if self.running:
@@ -205,8 +210,17 @@ class CameraWorker:
         self.camera.status = CameraStatus.OFFLINE
         if self.thread:
             self.thread.join(timeout=2)
+        self._release_capture()
 
     def _run(self) -> None:
+        if self.camera.source_type == "webcam":
+            self._run_capture()
+        else:
+            self._run_demo()
+
+    def _run_demo(self) -> None:
+        if not self.scene:
+            return
         target_fps = 12
         frame_id = 0
         next_frame = time.perf_counter()
@@ -265,6 +279,72 @@ class CameraWorker:
             next_frame += 1 / target_fps
             time.sleep(max(0, next_frame - time.perf_counter()))
 
+    def _run_capture(self) -> None:
+        target_fps = 20
+        frame_id = 0
+        next_frame = time.perf_counter()
+        source = self._capture_source()
+
+        while self.running:
+            started = time.perf_counter()
+            if not self.capture or not self.capture.isOpened():
+                self.capture = cv2.VideoCapture(source)
+                if not self.capture.isOpened():
+                    self.camera.status = CameraStatus.OFFLINE
+                    self.camera.fps = 0
+                    self.camera.latency_ms = 0
+                    time.sleep(1)
+                    continue
+
+            ok, frame = self.capture.read()
+            if not ok or frame is None:
+                self._release_capture()
+                self.camera.status = CameraStatus.DELAYED
+                time.sleep(0.25)
+                continue
+
+            ts = utc_now()
+            height, width = frame.shape[:2]
+            self.camera.resolution = (width, height)
+            latency = int((time.perf_counter() - started) * 1000)
+            self.camera.fps = target_fps
+            self.camera.latency_ms = latency
+            self.camera.status = CameraStatus.DELAYED if latency > 800 else CameraStatus.LIVE
+            output = FrameOutput(
+                ts=ts,
+                camera_id=self.camera.id,
+                frame_id=frame_id,
+                frame_size=[width, height],
+                people=[],
+                system={
+                    "fps": target_fps,
+                    "latency_ms": latency,
+                    "status": self.camera.status.value,
+                },
+            )
+            _, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
+            with self.lock:
+                self.latest_jpeg = encoded.tobytes()
+                self.latest_output = output
+                self.lock.notify_all()
+
+            frame_id += 1
+            next_frame += 1 / target_fps
+            time.sleep(max(0, next_frame - time.perf_counter()))
+
+        self._release_capture()
+
+    def _capture_source(self) -> int | str:
+        source = self.camera.source_url or os.getenv("FACTORY_WEBCAM_INDEX", "0")
+        if source.isdigit():
+            return int(source)
+        return source
+
+    def _release_capture(self) -> None:
+        if self.capture:
+            self.capture.release()
+            self.capture = None
+
     def _begin_event(self, frame: np.ndarray, end_ts: str, confidence: float) -> None:
         if self.pending_event:
             return
@@ -301,7 +381,10 @@ class CameraWorker:
             str(pending["clip_path"]),
             cv2.VideoWriter_fourcc(*"mp4v"),
             12,
-            (self.scene.width, self.scene.height),
+            (
+                self.scene.width if self.scene else self.camera.resolution[0],
+                self.scene.height if self.scene else self.camera.resolution[1],
+            ),
         )
         for buffered in pending["frames"]:
             writer.write(buffered)
@@ -345,6 +428,14 @@ class CameraManager:
                 location="Line 03 · Bay 02",
                 source_type="rtsp",
                 status=CameraStatus.OFFLINE,
+            ),
+            "cam-local": Camera(
+                id="cam-local",
+                name="Laptop Camera",
+                location="Local device · Camera 0",
+                source_type="webcam",
+                source_url=os.getenv("FACTORY_WEBCAM_INDEX", "0"),
+                status=CameraStatus.LIVE,
             ),
         }
         self.workers = {

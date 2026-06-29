@@ -42,9 +42,20 @@ npm run dev
 
 ## Camera Sources
 
-The runtime ships with two fake-live demo cameras and one offline RTSP placeholder.
-To connect a real source, create a `Camera` with `source_type="rtsp"` and its URL,
-then replace `DemoScene.render` in the worker with an OpenCV capture:
+The runtime ships with two fake-live demo cameras, one local laptop webcam camera,
+and one offline RTSP placeholder. `cam-local` uses OpenCV `VideoCapture(0)` by
+default and is selected first in the Live view. To use another local device index:
+
+```bash
+FACTORY_WEBCAM_INDEX=1 uvicorn app.main:app --reload
+```
+
+The webcam stream currently publishes real video with empty detection metadata.
+The demo cameras still drive the hydration sequence until a real detector is wired
+into the capture path.
+
+To connect an RTSP source, create a `Camera` with `source_type="rtsp"` and its URL,
+then use the same OpenCV capture path:
 
 ```python
 capture = cv2.VideoCapture("rtsp://user:password@host/stream")
@@ -122,4 +133,3 @@ which prevents a bottle near the mouth from skipping lift and cap opening.
 - WebRTC low-latency video transport and GPU inference workers.
 - Object storage, PostgreSQL, retention policy, audit logs, and role-based access.
 - Multi-camera correlation, alert rules, shift analytics, and model feedback labels.
-

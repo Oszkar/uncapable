@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Maximize, Pause, Radio, SlidersHorizontal } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Camera as CameraIcon, Maximize, Pause, Radio, SlidersHorizontal } from "lucide-react";
 import { getCameras, getEvents, socketUrl, streamUrl } from "../api";
 import ActionFeed from "../components/ActionFeed";
 import SequenceRail from "../components/SequenceRail";
@@ -10,9 +10,12 @@ import type { Camera, FrameOutput, HydrationEvent } from "../types";
 
 export default function LivePage() {
   const { t } = useI18n();
+  const localVideoRef = useRef<HTMLVideoElement>(null);
   const [cameras, setCameras] = useState<Camera[]>([]);
-  const [selectedId, setSelectedId] = useState("cam-001");
+  const [selectedId, setSelectedId] = useState("cam-local");
   const [frame, setFrame] = useState<FrameOutput>();
+  const [webcamReady, setWebcamReady] = useState(false);
+  const [webcamError, setWebcamError] = useState("");
   const [events, setEvents] = useState<HydrationEvent[]>([]);
   const [toggles, setToggles] = useState({ bottle: true, pose: true, hands: true });
 
@@ -32,12 +35,18 @@ export default function LivePage() {
 
   useEffect(() => {
     setFrame(undefined);
+    if (selectedId === "cam-local") return;
     const socket = new WebSocket(socketUrl(selectedId));
     socket.onmessage = (message) => setFrame(JSON.parse(message.data));
     return () => socket.close();
   }, [selectedId]);
 
   const selected = cameras.find((camera) => camera.id === selectedId);
+  const isLocalWebcam = selectedId === "cam-local";
+  const sourceLabel = isLocalWebcam ? "LOCAL WEBCAM" : "DEMO REPLAY";
+  const streamLabel = selected
+    ? `${selected.source_type.toUpperCase()} · ${selected.resolution[0]} × ${selected.resolution[1]}`
+    : "MJPEG";
   const person = frame?.people[0];
   const state = person?.action.state ?? "idle";
   const confidence = person?.action.confidence ?? 0;
@@ -45,6 +54,33 @@ export default function LivePage() {
     () => events.filter((event) => event.camera_id === selectedId),
     [events, selectedId],
   );
+
+  useEffect(() => {
+    if (!isLocalWebcam) return;
+
+    let stream: MediaStream | undefined;
+    setWebcamReady(false);
+    setWebcamError("");
+
+    navigator.mediaDevices
+      ?.getUserMedia({ video: true, audio: false })
+      .then((mediaStream) => {
+        stream = mediaStream;
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = mediaStream;
+          localVideoRef.current.play().catch(console.error);
+        }
+        setWebcamReady(true);
+      })
+      .catch((error) => {
+        console.error(error);
+        setWebcamError("Camera permission is required for local preview");
+      });
+
+    return () => {
+      stream?.getTracks().forEach((track) => track.stop());
+    };
+  }, [isLocalWebcam]);
 
   return (
     <main className="live-layout">
@@ -74,8 +110,8 @@ export default function LivePage() {
           ))}
         </div>
         <div className="source-note">
-          <Radio size={15} />
-          <div><strong>DEMO REPLAY</strong><span>MJPEG · 960 × 540</span></div>
+          {isLocalWebcam ? <CameraIcon size={15} /> : <Radio size={15} />}
+          <div><strong>{sourceLabel}</strong><span>{streamLabel}</span></div>
         </div>
       </aside>
 
@@ -101,7 +137,18 @@ export default function LivePage() {
           </div>
         </div>
         <div className="video-shell">
-          <img src={streamUrl(selectedId)} alt={`Live view from ${selected?.name}`} />
+          {isLocalWebcam ? (
+            <>
+              <video ref={localVideoRef} autoPlay playsInline muted />
+              {!webcamReady && (
+                <div className="video-placeholder">
+                  {webcamError || "Waiting for camera permission"}
+                </div>
+              )}
+            </>
+          ) : (
+            <img src={streamUrl(selectedId)} alt={`Live view from ${selected?.name}`} />
+          )}
           <VideoOverlay
             detection={person}
             sourceSize={frame?.frame_size ?? [960, 540]}
@@ -109,10 +156,10 @@ export default function LivePage() {
           />
           <div className="video-top-left">
             <span className="live-chip"><i /> LIVE</span>
-            <span>{frame?.system.fps.toFixed(1) ?? "—"} FPS</span>
+            <span>{isLocalWebcam && webcamReady ? "BROWSER" : frame?.system.fps.toFixed(1) ?? "—"} FPS</span>
             <span>{frame?.system.latency_ms ?? "—"} MS</span>
           </div>
-          <div className="person-label">P00</div>
+          {person && <div className="person-label">P00</div>}
           {confidence > 0.3 && (
             <div className={`action-state-label state-${state}`}>
               <span>{t(state)}</span>
@@ -122,7 +169,7 @@ export default function LivePage() {
           <SequenceRail state={state} confidence={confidence} />
           <div className="video-controls">
             <button title="Pause"><Pause size={15} /></button>
-            <span>FAKE LIVE · {new Date().toLocaleTimeString([], { hour12: false })}</span>
+            <span>{sourceLabel} · {new Date().toLocaleTimeString([], { hour12: false })}</span>
             <button title="Fullscreen" onClick={() => document.querySelector(".video-shell")?.requestFullscreen()}>
               <Maximize size={15} />
             </button>
@@ -169,4 +216,3 @@ function Timeline({ events }: { events: HydrationEvent[] }) {
     </div>
   );
 }
-
